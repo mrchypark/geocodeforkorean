@@ -3,7 +3,7 @@ geocode<-function()
 
 defaultwd<-getwd()
 
-InstallCandidates <- c("sp","rgdal","rvest","devtools","RCurl","xlsx")
+InstallCandidates <- c("sp","rgdal","rvest","devtools","RCurl","xlsx","data.table","plyr")
 # check if pkgs are already present
 toInstall <- InstallCandidates[!InstallCandidates %in% library()$results[,1]]
 if(length(toInstall)!=0) {install.packages(toInstall, repos = "http://cran.r-project.org")}
@@ -29,7 +29,6 @@ convertCoordSystem <- function(long, lat, from.crs, to.crs){
 
 
 geocode_result = c()
-  
 
 message("This code is for geocoding for korean.")
 message("Only for adress to UTM-K.(Maybe update.)")
@@ -92,20 +91,22 @@ for (file in 1:length(filelist)){
 
 message(filelist[file]," is on progress.")
 
-loc_list<-read.csv(filelist[file],stringsAsFactors=F)
+loc_list_original<-read.csv(filelist[file],stringsAsFactors=F)
 setwd(defaultwd)
+names(loc_list_original)<-c("no","address")
+loc_list <- unique(loc_list_original[,2])
+loc_list <- loc_list[nchar(loc_list)>0]
+loc_list <- data.frame(no=1:length(loc_list),address=loc_list,stringsAsFactors=F)
+
 
 for(loc in 1:nrow(loc_list)){
 
 message(loc_list[loc,2]," is on progress. ", loc," / ",nrow(loc_list)," ",file," / ",length(filelist))
 
-  # 검색어를 제외한 url
   url = "http://maps.googleapis.com/maps/api/geocode/xml?sensor=false&language=ko&address='"
 
-  # 검색어를 포함시켜서 만든 완전한 url
   geocode_url = paste0(url, URLencode(iconv(loc_list[loc,2],to="UTF-8")) , "'")
 
-  # url에서 utf-8 인코딩으로 xml자료를 가져온다
   geocode_xml = read_xml(geocode_url, encoding='UTF-8')
 
   stat = geocode_xml %>%
@@ -122,40 +123,40 @@ Sys.sleep(3)
 }
 if(!(stat %in% c("ZERO_RESULTS","INVALID_REQUEST"))){
 
-  # 위도값을 가져온다
   geocode_lat = geocode_xml %>%
     xml_node('geometry location lat') %>%
     xml_text()
 
-  # 경도값을 가져온다
   geocode_lon = geocode_xml %>%
     xml_node('geometry location lng') %>%
     xml_text()
 
-  # 지명, 위도, 경도를 1행짜리 데이터 프레임으로 구성한다
-  # 이 때 위도,경도값을 숫자로 변환한다
-
 result<-convertCoordSystem(as.numeric(geocode_lon), as.numeric(geocode_lat), from.crs, to.crs)
 
-  geocode_data = data.frame(adress = loc_list[loc,2], 
+  geocode_data = data.frame(address = loc_list[loc,2], 
                             lon = result$long,
                             lat = result$lat
                             )
-  # 최종 결과물이 저장될 오브젝트에 누적시켜서 값을 저장한다
+
   geocode_result = rbind(geocode_result, geocode_data)
 } else {
 
-  geocode_data = data.frame(adress = loc_list[loc,2], 
+  geocode_data = data.frame(address = loc_list[loc,2], 
                             lon = "no match.",
                             lat = "no match."
                             )
-  # 최종 결과물이 저장될 오브젝트에 누적시켜서 값을 저장한다
+
   geocode_result = rbind(geocode_result, geocode_data)
 
 }
 
 
 } # for get geocode_result
+
+result<-merge(loc_list_original, geocode_result, by = c("address"))
+result<-result[order(result$no),]
+result<-result[,c(1,4,5)]
+
 filename<-filelist[file]
 filename<-substr(filename,1,(nchar(filename)-4))
 
